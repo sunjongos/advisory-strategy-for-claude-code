@@ -1,10 +1,10 @@
 ---
 name: advisory-strategy
-description: "Anthropic 공식 Advisory Strategy 패턴. 사용자가 'advisory-strategy로 작업하자', '최고 품질로', '꼼꼼하게 검토하면서' 등을 요청하면 이 스킬을 활성화. Opus 4.7이 사전 검토(advisor)→계획(opusplan)→Sonnet/Haiku 실행→Opus 4.7 사후 자기비판/수정(advisor) 4단계 루프를 수행."
+description: "Anthropic 공식 Advisory Strategy 패턴. 사용자가 'advisory-strategy로 작업하자', '최고 품질로', '꼼꼼하게 검토하면서' 등을 요청하면 이 스킬을 활성화. 복잡도에 따라 1~4단계를 선택: 단순=Phase 2만, 보통=Plan→Execute→Review, 복잡=Advisor사전검토→Plan→Execute→Advisor사후검토. 실행(Phase 2)은 Sonnet 4.6/Haiku 4.5만 사용(토큰 최적화), Opus 4.7은 /advisor 슬래시 명령어로 설정 후 계획·검토에만 투입."
 ---
 
 # ADVISORY STRATEGY v2.0
-## Anthropic 공식 패턴 — 4단계 표준 작업 루프
+## Anthropic 공식 패턴 — 복잡도 기반 표준 작업 루프
 
 ---
 
@@ -23,6 +23,20 @@ description: "Anthropic 공식 Advisory Strategy 패턴. 사용자가 'advisory-
 - 여러 파일에 걸친 대규모 리팩토링
 - 외부 API 통합 또는 인프라 변경
 - 되돌리기 어려운 작업 (git 이력 수정, DB 마이그레이션 등)
+
+---
+
+## 복잡도별 루프 선택 (Phase Gate)
+
+> 모든 작업에 4단계를 돌리면 오히려 비효율. 복잡도에 맞는 루프를 선택한다.
+
+| 복잡도 | 적용 루프 | 해당 작업 예시 |
+|--------|-----------|--------------|
+| **단순** | Phase 2만 | 파일 읽기, 단일 줄 수정, 검색, 포맷팅 |
+| **보통** | Phase 1→2→3 | 버그 수정, 단일 기능 추가, 단순 리팩토링 |
+| **복잡** | Phase 0→1→2→3 | 아키텍처 설계, 대규모 리팩토링, 인프라 변경, 되돌리기 어려운 작업 |
+
+> **Phase 0는 방향이 불명확하거나 고위험 작업에만 투입한다.** 보통 복잡도는 Phase 1부터 시작.
 
 ---
 
@@ -60,10 +74,16 @@ ADVISOR RESPONSE FORMAT — MANDATORY:
 > **목적:** 잘못된 방향으로 삽질하지 않도록 Opus 4.7이 먼저 전체 방향을 점검
 
 **실행 순서:**
-1. `/advisor` 실행 → 현재 세션을 Opus 4.7로 전환
+1. `/advisor` 실행 → Claude Code 슬래시 명령어로 advisor 모델 선택 (현재: Opus 4.7)
 2. 코드베이스 탐색 (필요한 파일 Read/Glob/Grep 수행)
-3. `advisor()` 도구 호출 — **프롬프트 끝에 반드시 응답 형식 규칙을 포함**
+3. `advisor()` 도구 호출 → `/advisor`로 선택된 Opus 4.7이 현재 대화 전체를 검토
+   프롬프트 끝에 반드시 응답 형식 규칙을 포함
 4. Advisor 피드백을 수용하여 Phase 1 계획에 반영
+
+> **두 개념 구분:**
+> - `/advisor` = Claude Code 슬래시 명령어 — advisor로 사용할 모델을 선택 (Opus 4.7 선택)
+> - `advisor()` = 도구 호출 — `/advisor`로 선택된 모델에게 현재 대화 전체를 전달하여 검토 요청
+> 반드시 `/advisor`로 모델을 먼저 설정한 뒤 `advisor()`를 호출해야 Opus 4.7이 리뷰한다.
 
 **advisor() 호출 프롬프트 템플릿 (Phase 0):**
 ```
@@ -120,7 +140,8 @@ Max 100 words. Bullet list only. No prose.
 |------------|------|----------|
 | 코드 작성, 복잡한 편집, API 연동 | `claude-sonnet-4-6` | 품질·속도 균형 |
 | 파일 탐색, 검색, 단순 텍스트 수정 | `claude-haiku-4-5-20251001` | 최경량·최고속 |
-| 아키텍처 결정 필요 구현 중간 | `advisor()` 중간 호출 | 복잡도 대응 |
+
+> ⚠️ **Opus는 Phase 2에 절대 투입 금지.** 아키텍처 결정이 필요한 경우 Phase 2를 일단 중단하고 사용자에게 보고한 뒤 Phase 1로 돌아가 재계획한다.
 
 **실행 원칙:**
 1. WBS 순서를 따라 단계별로 진행
@@ -137,6 +158,7 @@ Max 100 words. Bullet list only. No prose.
 **실행 순서:**
 1. 실행 결과물을 모두 저장 (Write/Edit 완료)
 2. `advisor()` 도구 호출 — **작업 완료를 선언하기 직전, 반드시 호출** — **프롬프트 끝에 응답 형식 규칙 포함**
+   > 단, **단순 작업(Phase 2만 적용한 경우)은 Phase 3 생략 가능**. 보통·복잡 작업은 예외 없이 수행.
 
 **advisor() 호출 프롬프트 템플릿 (Phase 3):**
 ```
@@ -157,7 +179,7 @@ Max 100 words. Bullet list only. No prose.
 □ 기존 코드 컨벤션과 일관성이 유지되는가?
 □ 되돌리기 어려운 변경이 의도치 않게 발생하지 않았는가?
 □ 테스트/검증이 충분히 수행되었는가?
-□ Phase 0 Advisor의 피드백이 반영되었는가?
+□ Phase 0 Advisor의 피드백이 반영되었는가? (Phase 0 수행 시에만 해당)
 ```
 
 **Self-Correction 행동:**
@@ -200,23 +222,37 @@ Max 100 words. Bullet list only. No prose.
 ```
 사용자: "advisory-strategy로 작업하자"
 
-1. /advisor          → Opus 4.7 전환
-2. advisor()         → 방향 사전 점검
-3. opusplan          → WBS 계획 수립 → 사용자 승인
-4. Sonnet/Haiku      → 계획 실행 (Auto 모드)
-5. advisor()         → Self-Critique → Self-Correct
-6. 최종 보고         → 검증 결과 포함
+[복잡도 판단]
+  단순  → Phase 2만
+  보통  → Phase 1 → 2 → 3
+  복잡  → Phase 0 → 1 → 2 → 3
+
+Phase 0 (복잡 작업만)
+  /advisor     → Claude Code 슬래시 명령어 — Opus 4.7을 advisor 모델로 선택
+  advisor()    → 코드베이스 탐색 후 Opus 4.7에게 방향 점검 요청
+
+Phase 1
+  opusplan     → Opus 4.7 Thinking Mode로 WBS 계획 수립 → 사용자 승인
+
+Phase 2 (토큰 최적화 핵심 — Opus 투입 금지)
+  Sonnet 4.6   → 코드 작성 / 복잡한 편집
+  Haiku 4.5    → 파일 탐색 / 단순 수정
+
+Phase 3
+  advisor()    → Opus 4.7이 결과물 Self-Critique → Self-Correct → 최종 보고
+  ※ Phase 3 전에 /advisor로 모델이 이미 설정되어 있으면 재실행 불필요
 ```
 
 ---
 
-## 핵심 원칙 5가지 (절대 위반 금지)
+## 핵심 원칙 6가지 (절대 위반 금지)
 
-1. **Advisor First, Always** — 중요 작업은 반드시 Opus 사전 검토
+1. **Advisor First, Always** — 복잡/고위험 작업은 반드시 Phase 0 advisor() 사전 검토
 2. **Plan Before Execute** — 승인된 계획 없이 실행 없음
-3. **Right Model for Right Job** — 계획/검토는 Opus, 실행은 Sonnet/Haiku
-4. **Self-Correct Before Report** — 보고 전 반드시 Advisor 재검토
-5. **Human in the Loop** — 되돌리기 어려운 작업은 사용자 확인 필수
+3. **Right Model for Right Job** — 역할 분리: Opus는 계획·검토 전담, 실행은 Sonnet/Haiku
+4. **Token Optimization in Execution** — 실행(Phase 2)에 Opus 투입 금지. 예외 없음. Sonnet 4.6 또는 Haiku 4.5만 사용하여 토큰 비용 최소화, 작업 효율 극대화
+5. **Self-Correct Before Report** — 보고 전 반드시 advisor() 재검토
+6. **Human in the Loop** — 되돌리기 어려운 작업은 사용자 확인 필수
 
 ---
 
