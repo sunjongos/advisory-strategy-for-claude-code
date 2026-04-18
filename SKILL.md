@@ -26,6 +26,34 @@ description: "Anthropic 공식 Advisory Strategy 패턴. 사용자가 'advisory-
 
 ---
 
+## ⚠️ ADVISOR 응답 형식 규칙 (절대 준수)
+
+> **이 규칙은 advisor()를 호출할 때마다 반드시 프롬프트에 명시해야 한다.**
+
+```
+ADVISOR RESPONSE FORMAT — MANDATORY:
+- Maximum 100 words total
+- Bullet/numbered list format ONLY
+- No prose, no explanations, no summaries
+- Each item = one actionable step or one specific issue
+```
+
+**올바른 예시:**
+```
+1. auth.py:42 — token expiry 미처리, ValueError 발생 가능
+2. DB 트랜잭션 rollback 누락 (line 88)
+3. 테스트 커버리지 0% — 최소 happy path 추가 필요
+4. 완료 기준 달성됨, 나머지 이상 없음
+```
+
+**잘못된 예시 (금지):**
+```
+안녕하세요. 코드를 검토한 결과 전반적으로 잘 작성되었습니다. 다만 몇 가지
+개선할 수 있는 부분이 있어서 말씀드리겠습니다...  (❌ 산문형, 100단어 초과)
+```
+
+---
+
 ## 4단계 실행 워크플로우
 
 ### ━━━ PHASE 0: ADVISOR 사전 검토 (Pre-flight Review) ━━━
@@ -34,18 +62,18 @@ description: "Anthropic 공식 Advisory Strategy 패턴. 사용자가 'advisory-
 **실행 순서:**
 1. `/advisor` 실행 → 현재 세션을 Opus 4.7로 전환
 2. 코드베이스 탐색 (필요한 파일 Read/Glob/Grep 수행)
-3. `advisor()` 도구 호출 → 다음을 전달:
-   - 사용자 요청의 핵심 목표
-   - 현재 상태 (관련 파일/코드 요약)
-   - 검토 요청 포인트 (무엇을 점검해야 하는지)
+3. `advisor()` 도구 호출 — **프롬프트 끝에 반드시 응답 형식 규칙을 포함**
 4. Advisor 피드백을 수용하여 Phase 1 계획에 반영
 
-**Advisor 호출 시 포함할 내용:**
+**advisor() 호출 프롬프트 템플릿 (Phase 0):**
 ```
-- 요청 목표: [사용자가 원하는 것]
-- 현재 상태: [코드베이스 탐색 결과]
-- 내 계획 초안: [구현하려는 방향]
-- 검토 요청: [어떤 부분이 불확실한지]
+목표: [사용자가 원하는 것]
+현재 상태: [코드베이스 탐색 결과]
+계획 초안: [구현하려는 방향]
+검토 요청: [불확실한 부분]
+
+ADVISOR RESPONSE FORMAT — MANDATORY:
+Max 100 words. Bullet list only. No prose.
 ```
 
 ---
@@ -108,7 +136,17 @@ description: "Anthropic 공식 Advisory Strategy 패턴. 사용자가 'advisory-
 
 **실행 순서:**
 1. 실행 결과물을 모두 저장 (Write/Edit 완료)
-2. `advisor()` 도구 호출 → 전체 결과물 검토 요청
+2. `advisor()` 도구 호출 — **작업 완료를 선언하기 직전, 반드시 호출** — **프롬프트 끝에 응답 형식 규칙 포함**
+
+**advisor() 호출 프롬프트 템플릿 (Phase 3):**
+```
+수행한 작업: [변경 파일 목록 및 핵심 내용]
+달성 목표: [사용자 원래 요청]
+검토 요청: 위 결과물의 문제점과 누락을 열거하라.
+
+ADVISOR RESPONSE FORMAT — MANDATORY:
+Max 100 words. Bullet list only. No prose.
+```
 
 **Self-Critique 체크리스트:**
 ```
